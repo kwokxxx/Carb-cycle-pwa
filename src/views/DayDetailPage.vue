@@ -20,6 +20,14 @@ const unitCount = ref(1)
 const inputMode = ref('unit')
 const manualGrams = ref('')
 const weighInInput = ref('')
+const activeCategory = ref('staple')
+
+const categories = [
+  { key: 'staple', label: '主食' },
+  { key: 'meat', label: '肉蛋' },
+  { key: 'veggie', label: '蔬菜' },
+  { key: 'drink', label: '饮料' }
+]
 
 onMounted(async () => {
   await loadProfile()
@@ -55,6 +63,10 @@ const totalProtein = computed(() => {
   if (!log.value) return 0
   return log.value.entries.reduce((sum, e) => sum + (e.protein || 0), 0)
 })
+const totalFat = computed(() => {
+  if (!log.value) return 0
+  return log.value.entries.reduce((sum, e) => sum + (e.fat || 0), 0)
+})
 const totalCal = computed(() => {
   if (!log.value) return 0
   return log.value.entries.reduce((sum, e) => {
@@ -66,6 +78,8 @@ const carbPercent = computed(() => {
   if (!targetCarb.value) return 0
   return Math.min(100, (totalCarb.value / targetCarb.value) * 100)
 })
+
+const filteredFoods = computed(() => foods.value.filter(f => (f.category || 'staple') === activeCategory.value))
 
 const currentFood = computed(() => foods.value.find(f => f.id === selectedFood.value))
 
@@ -83,6 +97,11 @@ const computedCarb = computed(() => {
 const computedProtein = computed(() => {
   if (!currentFood.value || effectiveGrams.value <= 0) return 0
   return Math.round((effectiveGrams.value * (currentFood.value.proteinPer100g || 0)) / 100)
+})
+
+const computedFat = computed(() => {
+  if (!currentFood.value || effectiveGrams.value <= 0) return 0
+  return Math.round((effectiveGrams.value * (currentFood.value.fatPer100g || 0)) / 100)
 })
 
 function selectFood(id) {
@@ -110,7 +129,7 @@ async function submitEntry() {
     servingSize: null,
     carb: computedCarb.value,
     protein: computedProtein.value,
-    fat: Math.round((effectiveGrams.value * (food.fatPer100g || 0)) / 100),
+    fat: computedFat.value,
     mealType: null,
     timestamp: Date.now()
   }
@@ -193,6 +212,10 @@ const displayDate = computed(() => {
             <span class="text-neutral-600">{{ totalProtein }} / {{ targetProtein }}g</span>
           </div>
           <div class="flex justify-between text-xs">
+            <span class="text-neutral-400">脂肪</span>
+            <span class="text-neutral-600">{{ totalFat }}g</span>
+          </div>
+          <div class="flex justify-between text-xs">
             <span class="text-neutral-400">总热量</span>
             <span class="text-neutral-600 font-medium">{{ totalCal }} kcal</span>
           </div>
@@ -230,7 +253,7 @@ const displayDate = computed(() => {
           </div>
           <div class="flex-1 min-w-0">
             <p class="text-[14px] font-medium text-neutral-800">{{ entry.foodName }}</p>
-            <p class="text-[11px] text-neutral-400">{{ entry.amount }}g · {{ entry.carb }}g碳 · {{ entry.protein || 0 }}g蛋白</p>
+            <p class="text-[11px] text-neutral-400">{{ entry.amount }}g · {{ entry.carb }}g碳 · {{ entry.protein || 0 }}g蛋白 · {{ entry.fat || 0 }}g脂</p>
           </div>
           <button @click="deleteEntry(entry.id)"
             class="btn-press text-[11px] text-neutral-300 hover:text-neutral-500 px-2 py-1 rounded-lg transition-colors">
@@ -243,23 +266,32 @@ const displayDate = computed(() => {
     <!-- Add Form -->
     <transition name="slide-fade">
       <div v-if="showAddForm" class="card p-4 mb-3">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-[14px] font-semibold text-neutral-800">添加主食</h3>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-[14px] font-semibold text-neutral-800">添加食物</h3>
           <button @click="showAddForm = false; selectedFood = null" class="btn-press text-xs text-neutral-400">取消</button>
+        </div>
+
+        <!-- Category tabs -->
+        <div class="flex bg-neutral-100 rounded-lg p-0.5 mb-3">
+          <button v-for="cat in categories" :key="cat.key"
+            @click="activeCategory = cat.key; selectedFood = null"
+            class="flex-1 py-1.5 rounded-md text-[11px] font-medium transition-all"
+            :class="activeCategory === cat.key ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-400'"
+          >{{ cat.label }}</button>
         </div>
 
         <!-- Food selector with icons -->
         <div class="grid grid-cols-4 gap-2 mb-4">
           <button
-            v-for="food in foods" :key="food.id"
+            v-for="food in filteredFoods" :key="food.id"
             @click="selectFood(food.id)"
             class="flex flex-col items-center gap-1.5 py-3 rounded-xl btn-press transition-all duration-200"
             :class="selectedFood === food.id
               ? 'bg-neutral-800 text-white'
               : 'bg-neutral-50 text-neutral-500 hover:bg-neutral-100'"
           >
-            <FoodIcon :name="food.name" :size="24" />
-            <span class="text-[11px] font-medium">{{ food.name }}</span>
+            <FoodIcon :name="food.name" :size="22" />
+            <span class="text-[10px] font-medium leading-tight">{{ food.name }}</span>
           </button>
         </div>
 
@@ -294,27 +326,31 @@ const displayDate = computed(() => {
             <!-- Manual input -->
             <div v-else>
               <label class="text-[11px] text-neutral-400 mb-1 block">
-                克数（{{ currentFood.state === 'raw' ? '干重' : '熟重' }}）
+                {{ currentFood.state === 'liquid' ? '毫升 (ml)' : currentFood.state === 'raw' ? '克数（干重/生重）' : '克数（熟重）' }}
               </label>
               <input v-model="manualGrams" type="number" placeholder="输入克数" class="input-field" />
             </div>
 
             <!-- Result preview -->
             <transition name="fade">
-              <div v-if="computedCarb > 0" class="bg-neutral-50 rounded-xl p-3">
+              <div v-if="effectiveGrams > 0" class="bg-neutral-50 rounded-xl p-3 space-y-1">
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-neutral-400">碳水</span>
                   <span class="font-bold text-neutral-800">{{ computedCarb }}g</span>
                 </div>
-                <div class="flex items-center justify-between text-sm mt-1">
+                <div class="flex items-center justify-between text-sm">
                   <span class="text-neutral-400">蛋白质</span>
                   <span class="text-neutral-600">{{ computedProtein }}g</span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-neutral-400">脂肪</span>
+                  <span class="text-neutral-600">{{ computedFat }}g</span>
                 </div>
               </div>
             </transition>
 
             <button @click="submitEntry" class="btn-primary w-full" :disabled="effectiveGrams <= 0">
-              添加 · {{ computedCarb }}g 碳水
+              添加 · {{ computedCarb }}g碳 {{ computedProtein }}g蛋白
             </button>
           </div>
         </transition>
@@ -325,7 +361,7 @@ const displayDate = computed(() => {
     <transition name="fade">
       <button v-if="!showAddForm" @click="showAddForm = true"
         class="btn-press card w-full py-3.5 text-[13px] text-neutral-400 font-medium text-center hover:text-neutral-600 transition-colors">
-        + 添加主食记录
+        + 添加食物记录
       </button>
     </transition>
   </div>
